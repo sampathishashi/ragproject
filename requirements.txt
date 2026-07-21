@@ -7,3 +7,5 @@ langchain-groq
 faiss-cpu
 sentence-transformers
 tenacity
+torch
+torchvision
