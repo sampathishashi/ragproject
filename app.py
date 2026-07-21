@@ -1,14 +1,3 @@
-import sys
-from unittest.mock import MagicMock
-
-# ==========================================
-# 0. FIX FOR STREAMLIT CLOUD LOG SPAM
-# Streamlit's watcher scans 'transformers' image models which require 'torchvision'.
-# By mocking it, we prevent hundreds of ModuleNotFoundError warnings in the logs.
-# ==========================================
-if 'torchvision' not in sys.modules:
-    sys.modules['torchvision'] = MagicMock()
-
 import os
 import time
 import streamlit as st
@@ -33,7 +22,6 @@ except KeyError:
 
 # ==========================================
 # 2. CACHED DATA & VECTOR STORE
-# Using st.cache_resource so it only loads once when the app starts
 # ==========================================
 @st.cache_resource
 def get_vector_store():
