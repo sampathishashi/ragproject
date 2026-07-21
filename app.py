@@ -70,18 +70,12 @@ Context: {context}
 
 CRITICAL UNIQUENESS RULE: Use the seed to make this question DIFFERENT. Seed: {seed}
 
-Output STRICTLY a valid JSON object in this exact format. Do NOT output any markdown or text before or after the JSON:
-{{
-  "question": "The question text here?",
-  "options": {{
-    "A": "Option A text",
-    "B": "Option B text",
-    "C": "Option C text",
-    "D": "Option D text"
-  }},
-  "correct_answer": "A",
-  "explanation": "Step-by-step logical or mathematical explanation."
-}}
+CRITICAL FORMATTING RULE:
+Output STRICTLY a valid JSON object. Do NOT use markdown blocks (```). 
+Do NOT put newlines inside the text values. Keep explanations on a single line.
+Use exactly this format:
+
+{{"question": "Text here?", "options": {{"A": "Text A", "B": "Text B", "C": "Text C", "D": "Text D"}}, "correct_answer": "A", "explanation": "Text here."}}
 """)
 
 retrieval_query_extractor = RunnableLambda(lambda inputs: f"{inputs['topic']} {inputs['sub_topic']}")
@@ -98,7 +92,7 @@ aptitude_chain = (
 )
 
 # ==========================================
-# 4. PARALLEL EXECUTION WORKERS
+# 4. PARALLEL EXECUTION & ROBUST JSON PARSER
 # ==========================================
 @tenacity.retry(
     wait=tenacity.wait_exponential(multiplier=1, min=4, max=60),
@@ -107,6 +101,28 @@ aptitude_chain = (
 )
 def invoke_with_retry(inputs):
     return aptitude_chain.invoke(inputs)
+
+def safe_json_parse(result_str):
+    """Extracts and safely parses JSON from LLM output."""
+    # Remove markdown code blocks if the LLM added them despite instructions
+    result_str = result_str.replace("```json", "").replace("```", "").strip()
+    
+    # Find the JSON object
+    json_match = re.search(r"\{.*\}", result_str, re.DOTALL)
+    if not json_match:
+        return None
+        
+    json_str = json_match.group(0)
+    
+    # Remove trailing commas which break json.loads
+    json_str = re.sub(r",\s*\}", "}", json_str)
+    json_str = re.sub(r",\s*\]", "]", json_str)
+    
+    try:
+        # strict=False helps ignore hidden control characters like literal newlines inside strings
+        return json.loads(json_str, strict=False)
+    except json.JSONDecodeError:
+        return None
 
 SUB_TOPICS = [
     "basic concept", "edge case", "real-world application", "advanced variation",
@@ -130,13 +146,12 @@ def generate_one(idx, company, topic):
     }
     try:
         result = invoke_with_retry(inputs)
-        # Parse JSON safely
-        json_match = re.search(r"\{.*\}", result, re.DOTALL)
-        if json_match:
-            q_data = json.loads(json_match.group(0))
-            # Validate required fields
-            if all(k in q_data for k in ["question", "options", "correct_answer", "explanation"]):
-                return idx, sub, q_data, None
+        q_data = safe_json_parse(result)
+        
+        if q_data and all(k in q_data for k in ["question", "options", "correct_answer", "explanation"]):
+            # Ensure correct_answer is uppercase
+            q_data['correct_answer'] = str(q_data['correct_answer']).strip().upper()
+            return idx, sub, q_data, None
         return idx, sub, None, "JSON Parse Error"
     except Exception as e:
         return idx, sub, None, str(e)
@@ -183,7 +198,7 @@ if st.button("🚀 Generate Exam"):
         for future in as_completed(futures):
             idx, sub, result, error = future.result()
             if error:
-                st.error(f"Failed to generate Q{idx}: {error}")
+                st.warning(f"Skipped Q{idx}: Failed to generate cleanly.")
             else:
                 results[idx] = result
             
@@ -203,7 +218,7 @@ if st.button("🚀 Generate Exam"):
         st.success(f"🎉 Exam generated in {elapsed:.1f}s! Please answer the questions below.")
         st.rerun()
     else:
-        st.error("Failed to generate questions. Please try again.")
+        st.error("Failed to generate valid questions. Please try adjusting the topic or try again.")
 
 # --- STEP 2: TAKE THE EXAM (DISPLAY QUESTIONS & OPTIONS ONLY) ---
 if st.session_state.exam_questions and not st.session_state.exam_submitted:
