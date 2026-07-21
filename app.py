@@ -1,3 +1,14 @@
+import sys
+from unittest.mock import MagicMock
+
+# ==========================================
+# 0. FIX FOR STREAMLIT CLOUD LOG SPAM
+# Streamlit's watcher scans 'transformers' image models which require 'torchvision'.
+# By mocking it, we prevent hundreds of ModuleNotFoundError warnings in the logs.
+# ==========================================
+if 'torchvision' not in sys.modules:
+    sys.modules['torchvision'] = MagicMock()
+
 import os
 import time
 import tenacity
@@ -13,11 +24,7 @@ from langchain_community.vectorstores import FAISS
 # ==========================================
 # 1. CONFIGURATION & SETUP (SECURE)
 # ==========================================
-# The script now safely reads the key from your environment variables.
-# To run this locally, set your environment variable first:
-# Mac/Linux: export GROQ_API_KEY="gsk_your_real_key_here"
-# Windows (CMD): set GROQ_API_KEY=gsk_your_real_key_here
-# Windows (PS): $env:GROQ_API_KEY="gsk_your_real_key_here"
+# Ensure you set the GROQ_API_KEY in your Streamlit Cloud secrets or local environment
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 
 if not GROQ_API_KEY:
