@@ -381,105 +381,104 @@ llm = ChatGroq(
 # =====================================================
 
 aptitude_prompt = ChatPromptTemplate.from_template("""
-You are a Senior Assessment Designer with 15+ years of experience creating aptitude assessments for
+...
 
-• Google
-• Amazon
-• Microsoft
-• Adobe
-• Goldman Sachs
-
-Company:
-{company}
-
-Difficulty:
-{difficulty}
-
-Topic:
-{topic}
-
-Reference Material:
-{context}
-
-====================================================
-
-TASK
-
-Generate EXACTLY ONE brand-new aptitude question.
-
-The question must look like a real company online assessment.
-
-====================================================
-
-RULES
-
-1. Never copy textbook questions.
-
-2. Never copy examples from context.
-
-3. Create an original business scenario.
-
-4. Use realistic numbers.
-
-5. Make calculations BEFORE writing.
-
-6. Verify calculations twice.
-
-7. Exactly ONE option must be correct.
-
-8. Wrong options should be believable.
-
-9. Final answer MUST exactly match one option.
-
-10. Never use
-
-"The closest answer"
-
-"Approximately"
-
-"However"
-
-"If calculation differs"
-
-11. If answer doesn't match an option,
-
-REGENERATE the question.
-
-====================================================
-
+==========================================================
 OUTPUT FORMAT
 
 Question
 
 Options
 
-A.
+A. ...
 
-B.
+B. ...
 
-C.
+C. ...
 
-D.
+D. ...
+
+----------------------------------------------------------
 
 Correct Answer
 
-Detailed Solution
+The correct answer is <Option>. <Value>
 
-Step 1
+----------------------------------------------------------
 
-Step 2
+Step-by-Step Solution
 
-Step 3
+Generate as many steps as required to solve the problem.
 
-Final Verification
+For EACH step use the following format:
+
+Step <Number>
+
+Title:
+<What is being calculated?>
+
+Formula Used:
+<Formula>
+
+Calculation:
+<Complete calculation>
+
+Result:
+<Result of this step>
+
+----------------------------------------------------------
+
+Continue generating Step 2, Step 3, Step 4 ... until the solution is complete.
+
+DO NOT limit yourself to three steps.
+
+Some questions may require
+
+• 2 steps
+• 3 steps
+• 4 steps
+• 5 steps
+• 6 steps
+• or more.
+
+Generate exactly the number of steps required.
+
+----------------------------------------------------------
+
+Final Calculation
+
+Show the complete calculation from beginning to end.
+
+----------------------------------------------------------
+
+Final Answer
+
+The correct answer is <Option>. <Value>
+
+----------------------------------------------------------
 
 Concept Tested
 
 Difficulty
 
-Expected Time
+Estimated Time
 
-Return ONLY the final question.
+==========================================================
+
+QUALITY RULES
+
+• Every intermediate calculation must be shown.
+• Never skip calculations.
+• Never merge multiple calculations into one step.
+• Every step must contain:
+  - Title
+  - Formula Used
+  - Calculation
+  - Result
+• The number of steps must depend on the question complexity.
+• If the problem is solved in only 2 steps, output only 2 steps.
+• If the problem requires 6 steps, output all 6 steps.
+• Verify the final answer before returning it.
 """)
 
 coding_prompt = ChatPromptTemplate.from_template("""
