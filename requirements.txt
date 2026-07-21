@@ -1,12 +1,11 @@
 streamlit
 langchain
-langchain-community
-langchain-core
 langchain-text-splitters
 langchain-huggingface
+langchain-community
 langchain-groq
-sentence-transformers
+langchain-core
 faiss-cpu
-torch
+sentence-transformers
 python-docx
 reportlab
