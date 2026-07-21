@@ -104,22 +104,16 @@ def invoke_with_retry(inputs):
 
 def safe_json_parse(result_str):
     """Extracts and safely parses JSON from LLM output."""
-    # Remove markdown code blocks if the LLM added them despite instructions
     result_str = result_str.replace("```json", "").replace("```", "").strip()
-    
-    # Find the JSON object
     json_match = re.search(r"\{.*\}", result_str, re.DOTALL)
     if not json_match:
         return None
         
     json_str = json_match.group(0)
-    
-    # Remove trailing commas which break json.loads
     json_str = re.sub(r",\s*\}", "}", json_str)
     json_str = re.sub(r",\s*\]", "]", json_str)
     
     try:
-        # strict=False helps ignore hidden control characters like literal newlines inside strings
         return json.loads(json_str, strict=False)
     except json.JSONDecodeError:
         return None
@@ -147,9 +141,7 @@ def generate_one(idx, company, topic):
     try:
         result = invoke_with_retry(inputs)
         q_data = safe_json_parse(result)
-        
         if q_data and all(k in q_data for k in ["question", "options", "correct_answer", "explanation"]):
-            # Ensure correct_answer is uppercase
             q_data['correct_answer'] = str(q_data['correct_answer']).strip().upper()
             return idx, sub, q_data, None
         return idx, sub, None, "JSON Parse Error"
@@ -207,8 +199,6 @@ if st.button("🚀 Generate Exam"):
             status_text.text(f"Generated {completed}/{num_questions}...")
 
     elapsed = time.time() - start_time
-    
-    # Sort questions by index
     final_questions = [results[i] for i in sorted(results.keys()) if results[i] is not None]
     
     if final_questions:
@@ -220,7 +210,7 @@ if st.button("🚀 Generate Exam"):
     else:
         st.error("Failed to generate valid questions. Please try adjusting the topic or try again.")
 
-# --- STEP 2: TAKE THE EXAM (DISPLAY QUESTIONS & OPTIONS ONLY) ---
+# --- STEP 2: TAKE THE EXAM ---
 if st.session_state.exam_questions and not st.session_state.exam_submitted:
     st.markdown("---")
     st.subheader("📋 Assignment Test")
@@ -265,7 +255,6 @@ if st.session_state.exam_submitted:
     
     st.session_state.score = score
     
-    # Final Score Display
     st.metric("Your Final Score", f"{score} / {total}")
     percentage = (score / total) * 100
     if percentage >= 80:
