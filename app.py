@@ -1,5 +1,7 @@
 import os
 import time
+import json
+import re
 import streamlit as st
 import tenacity
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -47,7 +49,7 @@ def get_vector_store():
 retriever = get_vector_store()
 
 # ==========================================
-# 3. LLM & PROMPT ENGINEERING
+# 3. LLM & PROMPT ENGINEERING (STRICT JSON OUTPUT)
 # ==========================================
 @st.cache_resource
 def get_llm():
@@ -60,26 +62,26 @@ def format_docs(docs):
 
 aptitude_prompt = ChatPromptTemplate.from_template("""
 You are an expert technical interviewer for {company_name}.
-Use the provided context to create exactly 1 highly unique multiple-choice aptitude question
-following {company_name}'s typical recruitment style.
+Create exactly 1 highly unique multiple-choice aptitude question.
 
 Target Main Topic: {topic}
-Specific Sub-Focus Area: {sub_topic}
-Question Number: {question_num}
+Sub-Focus Area: {sub_topic}
+Context: {context}
 
-Context:
-{context}
+CRITICAL UNIQUENESS RULE: Use the seed to make this question DIFFERENT. Seed: {seed}
 
-CRITICAL UNIQUENESS RULE:
-- Use the seed below to make this question DIFFERENT from every other question.
-- Do NOT reuse the same names, numbers, or scenarios.
-- Seed (random seed for this question): {seed}
-
-Requirements:
-1. Formulate a challenging scenario tied to the sub-focus area.
-2. Provide 4 distinct options (A, B, C, D).
-3. Clearly state the Correct Answer.
-4. Provide a step-by-step mathematical or logical Explanation.
+Output STRICTLY a valid JSON object in this exact format. Do NOT output any markdown or text before or after the JSON:
+{{
+  "question": "The question text here?",
+  "options": {{
+    "A": "Option A text",
+    "B": "Option B text",
+    "C": "Option C text",
+    "D": "Option D text"
+  }},
+  "correct_answer": "A",
+  "explanation": "Step-by-step logical or mathematical explanation."
+}}
 """)
 
 retrieval_query_extractor = RunnableLambda(lambda inputs: f"{inputs['topic']} {inputs['sub_topic']}")
@@ -90,7 +92,6 @@ aptitude_chain = (
         "company_name": lambda x: x.get("company_name", "a top tech firm"),
         "topic": lambda x: x["topic"],
         "sub_topic": lambda x: x["sub_topic"],
-        "question_num": lambda x: x["question_num"],
         "seed": lambda x: x["seed"],
     }
     | aptitude_prompt | llm | StrOutputParser()
@@ -125,20 +126,34 @@ def generate_one(idx, company, topic):
         "company_name": company,
         "topic": topic,
         "sub_topic": sub,
-        "question_num": str(idx),
         "seed": seed,
     }
     try:
         result = invoke_with_retry(inputs)
-        return idx, sub, result, None
+        # Parse JSON safely
+        json_match = re.search(r"\{.*\}", result, re.DOTALL)
+        if json_match:
+            q_data = json.loads(json_match.group(0))
+            # Validate required fields
+            if all(k in q_data for k in ["question", "options", "correct_answer", "explanation"]):
+                return idx, sub, q_data, None
+        return idx, sub, None, "JSON Parse Error"
     except Exception as e:
         return idx, sub, None, str(e)
 
 # ==========================================
-# 5. STREAMLIT UI & MAIN EXECUTION
+# 5. SESSION STATE INITIALIZATION
 # ==========================================
-st.title("📝 Aptitude Question Generator (RAG)")
-st.markdown("Generate bulk multiple-choice aptitude questions using Groq & LangChain.")
+if 'exam_questions' not in st.session_state:
+    st.session_state.exam_questions = []
+    st.session_state.exam_submitted = False
+    st.session_state.score = 0
+
+# ==========================================
+# 6. STREAMLIT UI & MAIN EXECUTION
+# ==========================================
+st.title("📝 Aptitude Test Generator & Evaluator")
+st.markdown("Generate a test, answer the questions, and submit to see your marks and explanations.")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -146,10 +161,11 @@ with col1:
 with col2:
     topic = st.text_input("Topic", "Data Structures and Aptitude")
 
-num_questions = st.slider("Number of Questions", min_value=5, max_value=25, value=10, step=5)
-max_workers = st.slider("Parallel Workers (Speed)", min_value=2, max_value=8, value=4)
+num_questions = st.slider("Number of Questions", min_value=5, max_value=25, value=5, step=5)
+max_workers = st.slider("Generation Speed (Parallel Workers)", min_value=2, max_value=8, value=4)
 
-if st.button("🚀 Generate Questions"):
+# --- STEP 1: GENERATE EXAM ---
+if st.button("🚀 Generate Exam"):
     st.info(f"Generating {num_questions} questions for {company}...")
     
     start_time = time.time()
@@ -167,32 +183,86 @@ if st.button("🚀 Generate Questions"):
         for future in as_completed(futures):
             idx, sub, result, error = future.result()
             if error:
-                results[idx] = (sub, f"❌ FAILED: {error}")
+                st.error(f"Failed to generate Q{idx}: {error}")
             else:
-                results[idx] = (sub, result)
+                results[idx] = result
             
             completed += 1
             progress_bar.progress(completed / num_questions)
-            status_text.text(f"Completed {completed}/{num_questions}...")
+            status_text.text(f"Generated {completed}/{num_questions}...")
 
     elapsed = time.time() - start_time
-    st.success(f"🎉 Done! Generated in {elapsed:.1f}s")
+    
+    # Sort questions by index
+    final_questions = [results[i] for i in sorted(results.keys()) if results[i] is not None]
+    
+    if final_questions:
+        st.session_state.exam_questions = final_questions
+        st.session_state.exam_submitted = False
+        st.session_state.score = 0
+        st.success(f"🎉 Exam generated in {elapsed:.1f}s! Please answer the questions below.")
+        st.rerun()
+    else:
+        st.error("Failed to generate questions. Please try again.")
 
-    # Display results in order
-    st.subheader("Generated Questions")
-    full_text = ""
-    for i in range(1, num_questions + 1):
-        if i in results:
-            sub, text = results[i]
-            st.markdown(f"**Question {i}/{num_questions} [Focus: {sub}]**")
-            st.markdown(text)
+# --- STEP 2: TAKE THE EXAM (DISPLAY QUESTIONS & OPTIONS ONLY) ---
+if st.session_state.exam_questions and not st.session_state.exam_submitted:
+    st.markdown("---")
+    st.subheader("📋 Assignment Test")
+    st.markdown("*Select the best answer for each question.*")
+    
+    with st.form("exam_form"):
+        for i, q_data in enumerate(st.session_state.exam_questions):
+            st.markdown(f"**Q{i+1}: {q_data['question']}**")
+            options = [f"{k}: {v}" for k, v in q_data['options'].items()]
+            st.radio("Your Answer:", options, key=f"q_{i}", index=None)
             st.markdown("---")
-            full_text += f"--- Question {i}/{num_questions}  [Focus: {sub}] ---\n{text}\n\n{'='*60}\n\n"
+        
+        submitted = st.form_submit_button("✅ Submit Exam")
+        if submitted:
+            st.session_state.exam_submitted = True
+            st.rerun()
 
-    # Provide download button
-    st.download_button(
-        label="📥 Download Questions as TXT",
-        data=full_text,
-        file_name=f"{company}_aptitude_questions.txt",
-        mime="text/plain"
-    )
+# --- STEP 3: SHOW RESULTS, MARKS, EXPLANATIONS ---
+if st.session_state.exam_submitted:
+    st.markdown("---")
+    st.subheader("📊 Test Results & Explanations")
+    
+    score = 0
+    total = len(st.session_state.exam_questions)
+    
+    for i, q_data in enumerate(st.session_state.exam_questions):
+        user_choice_str = st.session_state.get(f"q_{i}", "No Answer")
+        user_ans = user_choice_str.split(":")[0] if user_choice_str != "No Answer" else "No Answer"
+        correct_ans = q_data['correct_answer'].strip().upper()
+        
+        st.markdown(f"**Q{i+1}: {q_data['question']}**")
+        
+        if user_ans == correct_ans:
+            st.success(f"✅ Your Answer: {user_ans} (Correct!)")
+            score += 1
+        else:
+            st.error(f"❌ Your Answer: {user_ans} (Incorrect)")
+            st.success(f"✔️ Correct Answer: {correct_ans}")
+            
+        st.info(f"**Explanation:** {q_data['explanation']}")
+        st.markdown("---")
+    
+    st.session_state.score = score
+    
+    # Final Score Display
+    st.metric("Your Final Score", f"{score} / {total}")
+    percentage = (score / total) * 100
+    if percentage >= 80:
+        st.balloons()
+        st.success(f"Excellent! You scored {percentage:.1f}%")
+    elif percentage >= 50:
+        st.warning(f"Good effort! You scored {percentage:.1f}%")
+    else:
+        st.error(f"Needs improvement. You scored {percentage:.1f}%")
+
+    if st.button("🔄 Start New Exam"):
+        st.session_state.exam_questions = []
+        st.session_state.exam_submitted = False
+        st.session_state.score = 0
+        st.rerun()
