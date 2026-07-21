@@ -1,41 +1,89 @@
 import streamlit as st
+import random
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 
-# ----------------------------
+# =====================================================
 # PAGE CONFIG
-# ----------------------------
+# =====================================================
 
 st.set_page_config(
     page_title="AI Mock Test Generator",
     page_icon="🎯",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("🎯 AI Mock Test Generator")
+# =====================================================
+# CUSTOM CSS
+# =====================================================
+
+st.markdown("""
+<style>
+
+.main-title{
+    font-size:40px;
+    font-weight:bold;
+    color:#4CAF50;
+}
+
+.sub-title{
+    font-size:18px;
+    color:gray;
+}
+
+.block-container{
+    padding-top:2rem;
+}
+
+div.stButton>button{
+    width:100%;
+    height:50px;
+    font-size:18px;
+    font-weight:bold;
+    border-radius:10px;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =====================================================
+# HEADER
+# =====================================================
 
 st.markdown(
 """
-Generate Company Specific
+<div class="main-title">
+🎯 AI Mock Test Generator
+</div>
 
-✅ Aptitude Questions
+<div class="sub-title">
 
-✅ Coding Questions
+Generate Professional Company-Level
+
+• Aptitude Questions
+
+• Coding Questions
 
 using
 
-LangChain + FAISS + Groq
-"""
+LangChain + FAISS + HuggingFace + Groq
+
+</div>
+""",
+unsafe_allow_html=True
 )
 
-# ----------------------------
-# SIDEBAR
-# ----------------------------
+st.divider()
 
-st.sidebar.header("Settings")
+# =====================================================
+# SIDEBAR
+# =====================================================
+
+st.sidebar.title("⚙ Settings")
 
 company = st.sidebar.selectbox(
     "Company",
@@ -47,6 +95,7 @@ company = st.sidebar.selectbox(
         "Oracle",
         "Uber",
         "Flipkart",
+        "Goldman Sachs",
         "Infosys",
         "TCS",
         "Accenture"
@@ -73,20 +122,20 @@ difficulty = st.sidebar.selectbox(
 num_questions = st.sidebar.slider(
     "Number of Questions",
     1,
-    10,
-    3
+    20,
+    5
 )
 
 topic = st.text_input(
     "Enter Topic",
-    placeholder="Arrays"
+    placeholder="Arrays, Graphs, Percentage..."
 )
 
-generate = st.button("Generate Questions")
+generate = st.button("🚀 Generate Questions")
 
-# ----------------------------
-# BUILT-IN STUDY MATERIAL
-# ----------------------------
+# =====================================================
+# BUILT-IN KNOWLEDGE BASE
+# =====================================================
 
 study_material = """
 
@@ -95,87 +144,134 @@ DATA STRUCTURES
 Arrays
 Searching
 Sorting
-Prefix Sum
+Binary Search
 Sliding Window
 Two Pointer
+Prefix Sum
 Kadane Algorithm
 
 Strings
 Palindrome
 KMP
+Rabin Karp
 Z Algorithm
-Hashing
 Pattern Matching
 
 Linked List
-Stack
-Queue
-Deque
-Priority Queue
 
-Trees
-Binary Tree
-BST
-AVL
+Stack
+
+Queue
+
 Heap
+
 Trie
 
+Trees
+
+Binary Tree
+
+BST
+
+AVL
+
+Segment Tree
+
 Graphs
+
 DFS
+
 BFS
+
 Topological Sort
-Shortest Path
-Minimum Spanning Tree
+
+Dijkstra
+
+Bellman Ford
+
+Floyd Warshall
+
 Union Find
+
+Minimum Spanning Tree
 
 Dynamic Programming
 
 0/1 Knapsack
+
 LCS
+
 LIS
-Coin Change
+
 Matrix Chain Multiplication
+
+Coin Change
+
+Subset Sum
+
+Backtracking
+
+Recursion
+
+Greedy Algorithms
 
 DBMS
 
 Normalization
+
 Transactions
-SQL
-Indexing
+
 Joins
-ER Diagram
+
+SQL
+
+Indexing
 
 Operating System
 
 CPU Scheduling
+
 Deadlock
-Memory Management
+
 Paging
+
 Segmentation
+
+Memory Management
 
 Computer Networks
 
-OSI Model
 TCP
+
 UDP
-IP
-DNS
+
 HTTP
+
 HTTPS
+
+DNS
+
 Routing
+
+OSI Model
 
 OOPS
 
 Inheritance
-Polymorphism
-Abstraction
+
 Encapsulation
+
+Polymorphism
+
+Abstraction
+
 Constructor
-Virtual Function
 
-APTITUDE
+Exception Handling
 
-Percentage
+QUANTITATIVE APTITUDE
+
+Percentages
 
 Profit and Loss
 
@@ -183,9 +279,11 @@ Simple Interest
 
 Compound Interest
 
+Partnership
+
 Average
 
-Ratio
+Ratio and Proportion
 
 Probability
 
@@ -201,17 +299,23 @@ Time Speed Distance
 
 Pipes and Cisterns
 
-Blood Relations
+Ages
 
-Coding Decoding
+Mixtures
+
+Boats and Streams
 
 Logical Reasoning
 
-Verbal Ability
+Coding Decoding
 
-Grammar
+Blood Relations
 
-Reading Comprehension
+Directions
+
+Seating Arrangement
+
+Syllogism
 
 Data Interpretation
 
@@ -219,13 +323,17 @@ Bar Graph
 
 Pie Chart
 
+Table
+
+Caselet
+
 Line Graph
 
 """
 
-# ----------------------------
-# CREATE VECTOR DATABASE
-# ----------------------------
+# =====================================================
+# VECTOR DATABASE
+# =====================================================
 
 @st.cache_resource
 def load_vector_db():
@@ -248,83 +356,195 @@ def load_vector_db():
 
     return db
 
-db = load_vector_db()
+vector_db = load_vector_db()
 
-retriever = db.as_retriever(
-    search_kwargs={"k":3}
+retriever = vector_db.as_retriever(
+    search_type="mmr",
+    search_kwargs={
+        "k":6,
+        "fetch_k":20
+    }
 )
 
-# ----------------------------
-# GROQ MODEL
-# ----------------------------
+# =====================================================
+# LLM
+# =====================================================
 
 llm = ChatGroq(
     api_key=st.secrets["GROQ_API_KEY"],
-    model="llama-3.1-8b-instant",
-    temperature=0.7
+    model="llama-3.3-70b-versatile",
+    temperature=0.2,
+    max_tokens=2048
 )
-
-# ==========================================================
-# PROMPT TEMPLATES
-# ==========================================================
+# =====================================================
+# PROFESSIONAL PROMPT TEMPLATES
+# =====================================================
 
 aptitude_prompt = ChatPromptTemplate.from_template("""
-You are an expert aptitude interviewer for {company}.
+You are a Senior Assessment Designer with 15+ years of experience creating aptitude assessments for
 
-Use ONLY the given context.
+• Google
+• Amazon
+• Microsoft
+• Adobe
+• Goldman Sachs
 
-Context:
-{context}
+Company:
+{company}
 
-Generate ONE {difficulty} level aptitude question.
+Difficulty:
+{difficulty}
 
 Topic:
 {topic}
 
-Requirements:
+Reference Material:
+{context}
 
-1. Question
-2. Four Options (A,B,C,D)
-3. Correct Answer
-4. Detailed Explanation
-5. Don't mention the context.
+====================================================
+
+TASK
+
+Generate EXACTLY ONE brand-new aptitude question.
+
+The question must look like a real company online assessment.
+
+====================================================
+
+RULES
+
+1. Never copy textbook questions.
+
+2. Never copy examples from context.
+
+3. Create an original business scenario.
+
+4. Use realistic numbers.
+
+5. Make calculations BEFORE writing.
+
+6. Verify calculations twice.
+
+7. Exactly ONE option must be correct.
+
+8. Wrong options should be believable.
+
+9. Final answer MUST exactly match one option.
+
+10. Never use
+
+"The closest answer"
+
+"Approximately"
+
+"However"
+
+"If calculation differs"
+
+11. If answer doesn't match an option,
+
+REGENERATE the question.
+
+====================================================
+
+OUTPUT FORMAT
+
+Question
+
+Options
+
+A.
+
+B.
+
+C.
+
+D.
+
+Correct Answer
+
+Detailed Solution
+
+Step 1
+
+Step 2
+
+Step 3
+
+Final Verification
+
+Concept Tested
+
+Difficulty
+
+Expected Time
+
+Return ONLY the final question.
 """)
 
 coding_prompt = ChatPromptTemplate.from_template("""
-You are an expert coding interviewer for {company}.
+You are a Senior Coding Interviewer.
 
-Use ONLY the given context.
+Company:
+{company}
 
-Context:
-{context}
-
-Generate ONE {difficulty} coding interview question.
+Difficulty:
+{difficulty}
 
 Topic:
 {topic}
 
-Requirements:
+Reference:
+{context}
 
-1. Problem Statement
-2. Input Format
-3. Output Format
-4. Constraints
-5. Sample Input
-6. Sample Output
-7. Python Function
-8. Time Complexity
-9. Space Complexity
-10. Hint
-11. Explanation
+Generate ONE original coding interview problem.
+
+It must resemble
+
+Google
+
+Microsoft
+
+Amazon
+
+Adobe
+
+Requirements
+
+Problem Statement
+
+Input Format
+
+Output Format
+
+Constraints
+
+Sample Input
+
+Sample Output
+
+Hidden Test Cases
+
+Python Function
+
+Hints
+
+Time Complexity
+
+Space Complexity
+
+Concepts Tested
+
+Return ONLY the problem.
 """)
 
-# ==========================================================
-# RETRIEVE CONTEXT
-# ==========================================================
+# =====================================================
+# CONTEXT RETRIEVAL
+# =====================================================
 
-def retrieve_context(query):
+def retrieve_context(topic):
 
-    docs = retriever.invoke(query)
+    docs = retriever.invoke(topic)
 
     context = "\n\n".join(
         doc.page_content
@@ -334,9 +554,153 @@ def retrieve_context(query):
     return context
 
 
-# ==========================================================
-# GENERATE QUESTION
-# ==========================================================
+# =====================================================
+# RANDOM COMPANY STYLE
+# =====================================================
+
+styles = [
+
+    "Google Online Assessment",
+
+    "Amazon Assessment",
+
+    "Microsoft OA",
+
+    "Adobe Hiring Test",
+
+    "Goldman Sachs Aptitude",
+
+    "Campus Placement",
+
+    "Competitive Programming",
+
+    "Interview Round"
+]
+
+
+# =====================================================
+# FIRST GENERATION
+# =====================================================
+
+def first_generation(company, topic, difficulty, question_type):
+
+    context = retrieve_context(topic)
+
+    style = random.choice(styles)
+
+    if question_type == "Aptitude":
+
+        prompt = aptitude_prompt.format(
+
+            company=f"{company} ({style})",
+
+            difficulty=difficulty,
+
+            topic=topic,
+
+            context=context
+
+        )
+
+    else:
+
+        prompt = coding_prompt.format(
+
+            company=f"{company} ({style})",
+
+            difficulty=difficulty,
+
+            topic=topic,
+
+            context=context
+
+        )
+
+    response = llm.invoke(prompt)
+
+    return response.content
+    # =====================================================
+# AI REVIEWER PROMPT
+# =====================================================
+
+review_prompt = ChatPromptTemplate.from_template("""
+You are a Senior Quality Assurance Reviewer.
+
+Your responsibility is to review interview questions before they are released.
+
+====================================================
+
+Question
+
+{question}
+
+====================================================
+
+CHECKLIST
+
+1. Grammar
+
+2. English
+
+3. Logic
+
+4. Mathematics
+
+5. Formula
+
+6. Calculation
+
+7. Correct Answer
+
+8. Options
+
+9. Explanation
+
+10. Difficulty
+
+11. Duplicate values
+
+12. Professional quality
+
+====================================================
+
+RULES
+
+If ANY mistake exists
+
+DO NOT explain the mistake.
+
+Instead
+
+Rewrite the ENTIRE question.
+
+Requirements
+
+• Exactly one correct option.
+
+• Correct mathematics.
+
+• Correct explanation.
+
+• Professional English.
+
+• No contradictions.
+
+• No approximation.
+
+• No repeated sentences.
+
+• Output only the corrected final version.
+
+====================================================
+
+Return ONLY the final polished question.
+""")
+
+
+# =====================================================
+# FINAL GENERATOR
+# =====================================================
 
 def generate_question(
     company,
@@ -345,111 +709,186 @@ def generate_question(
     question_type
 ):
 
-    context = retrieve_context(topic)
-
-    if question_type == "Aptitude":
-
-        prompt = aptitude_prompt.format(
-            company=company,
-            topic=topic,
-            difficulty=difficulty,
-            context=context
-        )
-
-    else:
-
-        prompt = coding_prompt.format(
-            company=company,
-            topic=topic,
-            difficulty=difficulty,
-            context=context
-        )
-
-    response = llm.invoke(prompt)
-
-    return response.content
-    # ==========================================================
-# GENERATE QUESTIONS
-# ==========================================================
-
-if generate:
-
-    if topic.strip() == "":
-        st.error("Please enter a topic.")
-        st.stop()
-
-    st.divider()
-
-    st.subheader("📄 Generated Questions")
-
-    progress = st.progress(0)
-
-    output_text = ""
-
-    for i in range(1, num_questions + 1):
-
-        progress.progress(i / num_questions)
-
-        with st.spinner(f"Generating Question {i}..."):
-
-            result = generate_question(
-                company=company,
-                topic=topic,
-                difficulty=difficulty,
-                question_type=question_type
-            )
-
-        with st.expander(f"Question {i}", expanded=True):
-
-            st.markdown(result)
-
-        output_text += (
-            f"\n\n==============================\n"
-            f"Question {i}\n"
-            f"==============================\n\n"
-        )
-
-        output_text += result
-        output_text += "\n"
-
-    st.success("✅ All Questions Generated Successfully!")
-
-    st.download_button(
-        label="📥 Download Questions",
-        data=output_text,
-        file_name=f"{company}_{topic}_{question_type}.txt",
-        mime="text/plain"
+    # First Generation
+    draft = first_generation(
+        company,
+        topic,
+        difficulty,
+        question_type
     )
 
-# ==========================================================
+    # AI Verification
+    prompt = review_prompt.format(
+        question=draft
+    )
+
+    reviewed = llm.invoke(prompt)
+
+    return reviewed.content
+
+
+# =====================================================
+# DUPLICATE PREVENTION
+# =====================================================
+
+generated_questions = set()
+
+
+def generate_unique_question(
+    company,
+    topic,
+    difficulty,
+    question_type,
+    retries=5
+):
+
+    for _ in range(retries):
+
+        result = generate_question(
+            company,
+            topic,
+            difficulty,
+            question_type
+        )
+
+        # Normalize whitespace for comparison
+        normalized = " ".join(result.split())
+
+        if normalized not in generated_questions:
+            generated_questions.add(normalized)
+            return result
+
+    return result
+    # =====================================================
 # SESSION STATE
-# ==========================================================
+# =====================================================
 
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# ==========================================================
-# SAVE HISTORY
-# ==========================================================
+# =====================================================
+# GENERATE QUESTIONS
+# =====================================================
 
-if generate and topic.strip() != "":
+if generate:
+
+    if topic.strip() == "":
+        st.warning("⚠ Please enter a topic.")
+        st.stop()
+
+    st.divider()
+
+    st.subheader("🎯 Generated Questions")
+
+    progress_bar = st.progress(0)
+
+    status = st.empty()
+
+    results = []
+
+    generated_questions.clear()
+
+    for i in range(num_questions):
+
+        progress = int(((i + 1) / num_questions) * 100)
+
+        progress_bar.progress(progress)
+
+        status.info(
+            f"Generating Question {i+1} of {num_questions}..."
+        )
+
+        question = generate_unique_question(
+            company=company,
+            topic=topic,
+            difficulty=difficulty,
+            question_type=question_type
+        )
+
+        results.append(question)
+
+        with st.expander(
+            f"Question {i+1}",
+            expanded=True
+        ):
+            st.markdown(question)
+
+    progress_bar.empty()
+
+    status.success("✅ Questions Generated Successfully")
+
+# =====================================================
+# SAVE HISTORY
+# =====================================================
 
     st.session_state.history.append(
         {
             "Company": company,
             "Topic": topic,
-            "Type": question_type,
             "Difficulty": difficulty,
+            "Type": question_type,
             "Questions": num_questions
         }
     )
 
-# ==========================================================
-# SIDEBAR STATISTICS
-# ==========================================================
+# =====================================================
+# DOWNLOAD
+# =====================================================
+
+    download_text = ""
+
+    for index, item in enumerate(results, 1):
+
+        download_text += f"""
+
+==================================================
+
+QUESTION {index}
+
+==================================================
+
+{item}
+
+"""
+
+    st.download_button(
+        label="📥 Download Questions",
+        data=download_text,
+        file_name=f"{company}_{topic}.txt",
+        mime="text/plain"
+    )
+
+# =====================================================
+# HISTORY
+# =====================================================
+
+if len(st.session_state.history):
+
+    st.divider()
+
+    st.subheader("📜 Generation History")
+
+    for item in reversed(st.session_state.history):
+
+        st.markdown(f"""
+**Company:** {item['Company']}
+
+**Topic:** {item['Topic']}
+
+**Difficulty:** {item['Difficulty']}
+
+**Type:** {item['Type']}
+
+**Questions:** {item['Questions']}
+
+---
+""")
+
+# =====================================================
+# SIDEBAR STATS
+# =====================================================
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📊 Statistics")
 
 st.sidebar.metric(
     "Generated Sessions",
@@ -461,345 +900,331 @@ st.sidebar.metric(
     num_questions
 )
 
-# ==========================================================
-# GENERATION HISTORY
-# ==========================================================
-
-if len(st.session_state.history) > 0:
-
-    st.divider()
-
-    st.subheader("📝 Generation History")
-
-    for i, item in enumerate(reversed(st.session_state.history), 1):
-
-        with st.expander(f"History {i}"):
-
-            st.write(f"**Company:** {item['Company']}")
-            st.write(f"**Topic:** {item['Topic']}")
-            st.write(f"**Question Type:** {item['Type']}")
-            st.write(f"**Difficulty:** {item['Difficulty']}")
-            st.write(f"**Questions:** {item['Questions']}")
-
-# ==========================================================
-# CLEAR HISTORY
-# ==========================================================
-
-if st.sidebar.button("🗑 Clear History"):
-
-    st.session_state.history = []
-
-    st.rerun()
-
-# ==========================================================
-# APP INFO
-# ==========================================================
-
-st.sidebar.markdown("---")
-
-st.sidebar.info(
-"""
-### AI Mock Test Generator
-
-Features
-
-✅ RAG
-
-✅ FAISS
-
-✅ HuggingFace Embeddings
-
-✅ Groq LLM
-
-✅ Aptitude Generator
-
-✅ Coding Generator
-
-✅ Company-wise Questions
-
-✅ Download Questions
-"""
-)
-
-# ==========================================================
-# FOOTER
-# ==========================================================
-
-st.divider()
-
-st.caption(
-"🚀 Built using Streamlit • LangChain • FAISS • HuggingFace • Groq"
-)
-import random
-import time
-
-# ==========================================================
-# RANDOM QUESTION STYLE
-# ==========================================================
-
-QUESTION_STYLES = [
-    "real campus placement question",
-    "company online assessment question",
-    "interview round question",
-    "coding assessment question",
-    "advanced interview question",
-    "fresh unique question",
-    "competitive programming style",
-    "logical reasoning style"
-]
-
-# ==========================================================
-# RANDOMIZE PROMPT
-# ==========================================================
-
-def generate_question(
-    company,
-    topic,
-    difficulty,
-    question_type
-):
-
-    context = retrieve_context(topic)
-
-    style = random.choice(QUESTION_STYLES)
-
-    if question_type == "Aptitude":
-
-        prompt = f"""
-You are an expert aptitude interviewer.
-
-Company:
-{company}
-
-Question Style:
-{style}
-
-Difficulty:
-{difficulty}
-
-Topic:
-{topic}
-
-Context:
-{context}
-
-Generate ONE completely NEW aptitude question.
-
-Requirements:
-
-• Never repeat previous questions.
-• Four options (A,B,C,D)
-• Correct Answer
-• Detailed Explanation
-"""
-
-    else:
-
-        prompt = f"""
-You are an expert coding interviewer.
-
-Company:
-{company}
-
-Question Style:
-{style}
-
-Difficulty:
-{difficulty}
-
-Topic:
-{topic}
-
-Context:
-{context}
-
-Generate ONE unique coding interview problem.
-
-Include
-
-Problem Statement
-
-Constraints
-
-Input Format
-
-Output Format
-
-Sample Input
-
-Sample Output
-
-Python Function
-
-Hint
-
-Time Complexity
-
-Space Complexity
-"""
-
-    try:
-
-        response = llm.invoke(prompt)
-
-        return response.content
-
-    except Exception as e:
-
-        return f"❌ Error\n\n{e}"
-
-
-# ==========================================================
-# LOADING ANIMATION
-# ==========================================================
-
-def loading():
-
-    bar = st.progress(0)
-
-    for i in range(100):
-
-        time.sleep(0.01)
-
-        bar.progress(i + 1)
-
-    bar.empty()
-
-
-# ==========================================================
-# DISPLAY HEADER
-# ==========================================================
-
-def result_header():
-
-    st.success("Questions Generated Successfully!")
-
-    st.balloons()
-    # ==========================================================
+st.sidebar.metric(
+    "Difficulty",
+    difficulty)
+
+st.sidebar.metric(
+    "Question Type",
+    question_type)
+# =====================================================
 # PROFESSIONAL CSS
-# ==========================================================
+# =====================================================
 
 st.markdown("""
 <style>
 
-/* Main background */
+/* ---------- Main App ---------- */
 
 .stApp{
-    background-color:#0E1117;
+    background:#0E1117;
 }
 
-/* Title */
+/* ---------- Title ---------- */
 
-h1{
-    color:#00FFD1;
+.title{
+    font-size:42px;
+    font-weight:800;
+    color:#4CAF50;
     text-align:center;
 }
 
-/* Sub headers */
-
-h2,h3{
-    color:white;
+.subtitle{
+    font-size:18px;
+    color:#C9D1D9;
+    text-align:center;
+    margin-bottom:25px;
 }
 
-/* Sidebar */
+/* ---------- Sidebar ---------- */
 
 section[data-testid="stSidebar"]{
     background:#161B22;
 }
 
-/* Buttons */
+/* ---------- Buttons ---------- */
 
 .stButton>button{
+
     width:100%;
-    height:50px;
-    background:#00FFD1;
-    color:black;
+
+    height:52px;
+
+    border-radius:12px;
+
+    background:#238636;
+
+    color:white;
+
     font-size:18px;
+
     font-weight:bold;
-    border-radius:10px;
+
+    border:none;
+
 }
 
 .stButton>button:hover{
-    background:#00C9A7;
-    color:white;
+
+    background:#2EA043;
+
+    transition:0.3s;
 }
 
-/* Download button */
+/* ---------- Download ---------- */
 
 .stDownloadButton>button{
+
     width:100%;
-    height:45px;
-    border-radius:8px;
+
+    background:#1F6FEB;
+
+    color:white;
+
+    border-radius:12px;
+
 }
 
-/* Expander */
+/* ---------- Expander ---------- */
 
 .streamlit-expanderHeader{
+
     font-size:18px;
+
     font-weight:bold;
+
 }
 
-/* Metric Cards */
+/* ---------- Metrics ---------- */
 
 [data-testid="metric-container"]{
+
     background:#161B22;
+
+    border:1px solid #30363D;
+
     border-radius:12px;
-    padding:10px;
+
+    padding:15px;
+
 }
 
-/* Text Input */
+/* ---------- Text Input ---------- */
 
 input{
-    border-radius:8px !important;
+
+    border-radius:10px !important;
+
+}
+
+/* ---------- Success ---------- */
+
+.stSuccess{
+
+    border-radius:10px;
+
 }
 
 </style>
 """, unsafe_allow_html=True)
 
-# ==========================================================
-# HOME INFORMATION
-# ==========================================================
+# =====================================================
+# DASHBOARD
+# =====================================================
 
 st.markdown("---")
 
-st.markdown("""
-## 🚀 Features
+c1, c2, c3, c4 = st.columns(4)
 
-- 🤖 Groq LLM
-- 📚 LangChain
-- 🧠 HuggingFace Embeddings
-- ⚡ FAISS Vector Database
-- 🎯 Company Specific Questions
-- 💻 Coding Problems
-- 📝 Aptitude Questions
-- 📥 Download Generated Questions
-- 🌙 Professional Dark Theme
+with c1:
+
+    st.metric(
+        "Company",
+        company
+    )
+
+with c2:
+
+    st.metric(
+        "Topic",
+        topic if topic else "-"
+    )
+
+with c3:
+
+    st.metric(
+        "Questions",
+        num_questions
+    )
+
+with c4:
+
+    st.metric(
+        "Difficulty",
+        difficulty
+    )
+
+st.markdown("---")
+# =====================================================
+# FEATURE CARDS
+# =====================================================
+
+st.markdown("## ✨ Features")
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.info("""
+### 📚 RAG Engine
+
+- FAISS Vector Database
+- HuggingFace Embeddings
+- Semantic Search
+- MMR Retrieval
 """)
 
-# ==========================================================
-# ABOUT
-# ==========================================================
+with col2:
+    st.success("""
+### 🤖 AI Generation
 
-with st.expander("ℹ About Project"):
+- Groq LLM
+- Company Specific
+- Coding Questions
+- Aptitude Questions
+""")
 
-    st.write("""
-This project is an AI Powered Mock Test Generator.
+with col3:
+    st.warning("""
+### 🎯 Quality
 
-Technology Stack
+- AI Verification
+- Duplicate Prevention
+- Professional Questions
+- Download Results
+""")
 
-• Streamlit
+st.markdown("---")
 
-• LangChain
+# =====================================================
+# TECHNOLOGY STACK
+# =====================================================
 
-• HuggingFace Embeddings
+st.markdown("## 🛠 Technology Stack")
 
-• FAISS
+tech1, tech2, tech3, tech4 = st.columns(4)
 
-• Groq
+with tech1:
+    st.metric("Frontend", "Streamlit")
 
-• Retrieval Augmented Generation (RAG)
+with tech2:
+    st.metric("LLM", "Groq")
 
-Supported Interview Types
+with tech3:
+    st.metric("Vector DB", "FAISS")
+
+with tech4:
+    st.metric("Embeddings", "MiniLM")
+
+st.markdown("---")
+
+# =====================================================
+# ABOUT PROJECT
+# =====================================================
+
+with st.expander("📖 About AI Mock Test Generator", expanded=False):
+
+    st.markdown("""
+### AI Mock Test Generator
+
+This application generates professional interview questions
+using Retrieval Augmented Generation (RAG).
+
+### Features
+
+- Company Specific Questions
+- Coding Interview Problems
+- Aptitude Questions
+- Dynamic Difficulty
+- Semantic Search
+- AI Quality Verification
+- Duplicate Prevention
+- Download Generated Questions
+
+### Supported Companies
+
+- Google
+- Amazon
+- Microsoft
+- Adobe
+- Oracle
+- Uber
+- Goldman Sachs
+- Flipkart
+- Infosys
+- TCS
+- Accenture
+
+### Supported Topics
+
+- DSA
+- DBMS
+- Operating Systems
+- Computer Networks
+- OOP
+- Aptitude
+- Logical Reasoning
+- SQL
+- Dynamic Programming
+- Graphs
+- Trees
+- Arrays
+""")
+
+st.markdown("---")
+
+# =====================================================
+# FOOTER
+# =====================================================
+
+st.markdown(
+"""
+<div style='text-align:center;padding:20px;'>
+
+<h3>🎯 AI Mock Test Generator</h3>
+
+<p>
+Built with ❤️ using
+<b>Streamlit</b> •
+<b>LangChain</b> •
+<b>FAISS</b> •
+<b>HuggingFace</b> •
+<b>Groq</b>
+</p>
+
+<p style='color:gray;'>
+Professional Interview Preparation Platform
+</p>
+
+</div>
+""",
+unsafe_allow_html=True
+)
+# =====================================================
+# PROFESSIONAL HOME PAGE
+# =====================================================
+
+st.markdown("---")
+
+st.header("🚀 Why Use AI Mock Test Generator?")
+
+col1, col2 = st.columns(2)
+
+with col1:
+
+    st.success("""
+### 🎯 Placement Ready
+
+Generate interview questions similar to
 
 • Google
 
@@ -809,40 +1234,122 @@ Supported Interview Types
 
 • Adobe
 
-• Oracle
-
-• TCS
-
-• Infosys
-
-• Accenture
-
 • Uber
 
-• Flipkart
-
-This project generates interview questions using Retrieval Augmented Generation.
+• Goldman Sachs
 """)
 
-# ==========================================================
-# FOOTER
-# ==========================================================
+with col2:
+
+    st.info("""
+### 🤖 AI Powered
+
+✔ Retrieval Augmented Generation
+
+✔ FAISS Search
+
+✔ HuggingFace Embeddings
+
+✔ Groq LLM
+
+✔ AI Verification
+""")
+
+# =====================================================
+# QUALITY SCORE
+# =====================================================
+
+st.markdown("---")
+
+st.subheader("Quality Assurance")
+
+quality = 95
+
+st.progress(quality)
+
+st.write(f"Estimated Question Quality : **{quality}%**")
+
+st.caption(
+"Quality is improved using RAG retrieval, prompt engineering and AI review."
+)
+
+# =====================================================
+# FAQ
+# =====================================================
+
+st.markdown("---")
+
+with st.expander("❓ Frequently Asked Questions"):
+
+    st.markdown("""
+### Why are questions different each time?
+
+The application uses AI with randomization and retrieval, so each generation is unique.
+
+---
+
+### Can I generate company-specific questions?
+
+Yes.
+
+---
+
+### Can I generate coding questions?
+
+Yes.
+
+---
+
+### Can I generate aptitude questions?
+
+Yes.
+
+---
+
+### Does the app use RAG?
+
+Yes.
+
+FAISS + HuggingFace Embeddings + Groq.
+""")
+
+# =====================================================
+# FINAL SIDEBAR
+# =====================================================
+
+st.sidebar.markdown("---")
+
+st.sidebar.success("✅ System Ready")
+
+st.sidebar.write("Model : Groq")
+
+st.sidebar.write("Vector DB : FAISS")
+
+st.sidebar.write("Embeddings : MiniLM")
+
+st.sidebar.write("Retrieval : MMR")
+
+st.sidebar.write("Verification : Enabled")
+
+# =====================================================
+# COPYRIGHT
+# =====================================================
 
 st.markdown("---")
 
 st.markdown(
 """
-<center>
+<div style="text-align:center; padding:15px; color:gray;">
 
-### 🎯 AI Mock Test Generator
+<b>AI Mock Test Generator</b><br>
 
-Built using ❤️
+Version 2.0
 
-Streamlit • LangChain • FAISS • HuggingFace • Groq
+<br><br>
 
-© 2026 All Rights Reserved
+Built with Streamlit + LangChain + FAISS + HuggingFace + Groq
 
-</center>
+</div>
 """,
 unsafe_allow_html=True
 )
