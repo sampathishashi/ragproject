@@ -93,18 +93,6 @@ vector_db = load_vector_database()
 retriever = vector_db.as_retriever(search_type="mmr", search_kwargs={"k": 6, "fetch_k": 20}) if vector_db else None
 
 # ==========================================================
-# LLM CONFIGURATION
-# ==========================================================
-
-llm = None
-try:
-    groq_api_key = st.secrets.get("GROQ_API_KEY", "")
-    if groq_api_key:
-        llm = ChatGroq(api_key=groq_api_key, model="llama-3.3-70b-versatile", temperature=0.2, max_tokens=4096)
-except Exception:
-    pass
-
-# ==========================================================
 # PROMPTS & JSON PARSER
 # ==========================================================
 
@@ -156,9 +144,9 @@ def extract_json(text):
 # QUIZ GENERATION LOGIC
 # ==========================================================
 
-def generate_quiz_question(company, topic, difficulty):
+def generate_quiz_question(llm, company, topic, difficulty):
     if llm is None:
-        return None
+        return None, "LLM not initialized."
     
     context = "\n".join([doc.page_content for doc in retriever.invoke(topic)]) if retriever else ""
     
@@ -171,22 +159,28 @@ def generate_quiz_question(company, topic, difficulty):
         q_data = extract_json(response.content)
         
         if q_data and "question" in q_data and "options" in q_data and "correct_option" in q_data:
-            return q_data
-        return None
+            return q_data, None
+        return None, "Failed to parse JSON from LLM response."
     except Exception as e:
-        st.error(f"Error generating question: {e}")
-        return None
+        error_msg = str(e)
+        if "429" in error_msg or "rate_limit_exceeded" in error_msg:
+            return None, "Rate limit reached for this model. Please switch models in the sidebar or wait for the limit to reset."
+        return None, f"API Error: {error_msg}"
 
-def generate_full_quiz(company, topic, difficulty, count):
+def generate_full_quiz(llm, company, topic, difficulty, count):
     quiz = []
     progress = st.progress(0)
     status = st.empty()
     
     for i in range(count):
         status.info(f"Generating Question {i+1} of {count}...")
-        q = generate_quiz_question(company, topic, difficulty)
+        q, error = generate_quiz_question(llm, company, topic, difficulty)
         if q:
             quiz.append(q)
+        elif error:
+            status.error(error)
+            st.stop() # Halt generation if we hit a rate limit
+            
         progress.progress((i + 1) / count)
         
     progress.empty()
@@ -198,10 +192,27 @@ def generate_full_quiz(company, topic, difficulty, count):
 # ==========================================================
 
 st.sidebar.title("⚙ Configuration")
+
+# Model selector to bypass rate limits
+model_choice = st.sidebar.selectbox(
+    "Select Groq Model", 
+    ["llama-3.3-70b-versatile", "llama3-8b-8192", "gemma2-9b-it"],
+    help="Switch to llama3-8b or gemma2 if you hit a 429 rate limit error on the 70b model."
+)
+
 company = st.sidebar.selectbox("Target Company", ["Google", "Amazon", "Microsoft", "Adobe", "Uber", "Goldman Sachs"])
 difficulty = st.sidebar.selectbox("Difficulty", ["Easy", "Medium", "Hard"])
 num_questions = st.sidebar.slider("Number of Questions", 1, 10, 5)
 topic = st.sidebar.text_input("Enter Topic", placeholder="Arrays, Percentage, DBMS...")
+
+# Initialize LLM based on selection
+llm = None
+try:
+    groq_api_key = st.secrets.get("GROQ_API_KEY", "")
+    if groq_api_key:
+        llm = ChatGroq(api_key=groq_api_key, model=model_choice, temperature=0.2, max_tokens=4096)
+except Exception:
+    pass
 
 if st.sidebar.button("🚀 Start New Test"):
     if not topic.strip():
@@ -209,11 +220,12 @@ if st.sidebar.button("🚀 Start New Test"):
     elif llm is None:
         st.sidebar.error("Groq LLM not connected.")
     else:
-        with st.spinner("Generating your personalized test..."):
-            st.session_state.quiz_data = generate_full_quiz(company, topic, difficulty, num_questions)
-            st.session_state.current_q_idx = 0
-            st.session_state.quiz_submitted = False
-            st.session_state.user_answers = {}
+        with st.spinner(f"Generating your test using {model_choice}..."):
+            st.session_state.quiz_data = generate_full_quiz(llm, company, topic, difficulty, num_questions)
+            if st.session_state.quiz_data: # Only start if generation succeeded
+                st.session_state.current_q_idx = 0
+                st.session_state.quiz_submitted = False
+                st.session_state.user_answers = {}
         st.rerun()
 
 # ==========================================================
@@ -312,16 +324,14 @@ else:
         """, unsafe_allow_html=True)
         
         with st.expander("📖 View Explanation"):
-            # Render the steps cleanly
             steps = q_data.get("explanation_steps", [])
             if isinstance(steps, list):
                 for step in steps:
                     st.markdown(f"**{step}**")
-                    st.write("") # Spacer
+                    st.write("")
             else:
                 st.markdown(steps)
                 
-            # Render the shortcut method
             shortcut = q_data.get("shortcut_method", "")
             if shortcut:
                 st.info(f"💡 **{shortcut}**")
