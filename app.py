@@ -109,18 +109,30 @@ except Exception:
 # ==========================================================
 
 QUIZ_PROMPT = ChatPromptTemplate.from_template("""
-You are a Senior Assessment Designer.
+You are a Senior Aptitude Assessment Designer.
 Create ONE multiple-choice question for a {company} interview assessment.
 Topic: {topic}
 Difficulty: {difficulty}
 Reference Context: {context}
 
-OUTPUT STRICTLY IN JSON FORMAT with the following schema:
+CRITICAL INSTRUCTIONS FOR EXPLANATION:
+- Solve the math problem silently in your head first.
+- DO NOT ramble, repeat yourself, or mention the options in the explanation.
+- The explanation MUST be divided into an array of clear, concise steps.
+- Provide an alternative shortcut method if applicable.
+
+OUTPUT STRICTLY IN JSON FORMAT with this exact schema:
 {{
   "question": "The full text of the question",
   "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
   "correct_option": "Exact text of the correct option from the list above",
-  "explanation": "Step-by-step explanation of why the correct option is right."
+  "explanation_steps": [
+    "1. Calculate the Cost Price (CP): Total weight bought: 100 kg, Cost per kg: $5, Total Cost Price: 100 × $5 = $500",
+    "2. Calculate Selling Price for the First Part (80%): ...",
+    "3. Calculate Selling Price for the Remaining Part (20%): ...",
+    "4. Determine Total Profit Percentage: Total Selling Price: $480 + $90 = $570. Total Profit made: $570 - $500 = $70. Profit percentage equation: ($70 / $500) × 100 = 14%"
+  ],
+  "shortcut_method": "Alternative Shortcut Method: You can bypass the dollar amount entirely by using a weighted average. 80% of items yield +20% profit. 20% of items yield -10% loss. Net effect: (0.80 × 20) + (0.20 × -10). Final calculation: 16 - 2 = 14%"
 }}
 
 Do not include any markdown formatting or text outside the JSON block.
@@ -231,11 +243,7 @@ elif not st.session_state.quiz_submitted:
         st.markdown('<div class="question-card">', unsafe_allow_html=True)
         st.markdown(f"### {current_q['question']}")
         
-        # Use radio buttons for options
-        # We need to persist the answer in session state when navigating
         default_idx = st.session_state.user_answers.get(q_idx, None)
-        
-        # Map default index safely
         options = current_q["options"]
         try:
             default_selection = options.index(default_idx) if default_idx in options else None
@@ -249,13 +257,11 @@ elif not st.session_state.quiz_submitted:
             key=f"radio_{q_idx}"
         )
         
-        # Save answer immediately when selected
         if selected_option:
             st.session_state.user_answers[q_idx] = selected_option
             
         st.markdown('</div>', unsafe_allow_html=True)
     
-    # Navigation Buttons
     col1, col2, col3 = st.columns([1, 1, 2])
     
     with col1:
@@ -306,7 +312,19 @@ else:
         """, unsafe_allow_html=True)
         
         with st.expander("📖 View Explanation"):
-            st.markdown(q_data.get("explanation", "No explanation provided."))
+            # Render the steps cleanly
+            steps = q_data.get("explanation_steps", [])
+            if isinstance(steps, list):
+                for step in steps:
+                    st.markdown(f"**{step}**")
+                    st.write("") # Spacer
+            else:
+                st.markdown(steps)
+                
+            # Render the shortcut method
+            shortcut = q_data.get("shortcut_method", "")
+            if shortcut:
+                st.info(f"💡 **{shortcut}**")
     
     st.markdown("---")
     col1, col2 = st.columns([1, 2])
